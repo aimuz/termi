@@ -6,11 +6,82 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
 	"termi.sh/termi/internal/llm"
 	"termi.sh/termi/internal/runner"
 	"termi.sh/termi/internal/suggest"
 	"termi.sh/termi/internal/ui"
 )
+
+// loadingModel 是一个简单的 loading 模型
+type loadingModel struct {
+	spinner  spinner.Model
+	quitting bool
+	done     bool
+}
+
+func (m loadingModel) Init() tea.Cmd {
+	return m.spinner.Tick
+}
+
+func (m loadingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q", "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		}
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case tea.QuitMsg:
+		m.done = true
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m loadingModel) View() string {
+	if m.quitting || m.done {
+		// 清理 loading 输出
+		return "\r\033[K"
+	}
+	return fmt.Sprintf("\r %s Thinking...", m.spinner.View())
+}
+
+// runWithLoading 在后台运行函数时显示 loading
+func runWithLoading(fn func()) {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("69"))
+
+	m := loadingModel{spinner: s}
+
+	// 启动 loading UI
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+
+	done := make(chan bool)
+	go func() {
+		fn()
+		done <- true
+	}()
+
+	go func() {
+		<-done
+		p.Send(tea.Quit())
+	}()
+
+	if _, err := p.Run(); err != nil {
+		fmt.Println("Error running program:", err)
+	}
+	// 确保清理输出
+	fmt.Fprint(os.Stderr, "\r\033[K")
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -25,7 +96,14 @@ func main() {
 	if llm.Enabled() {
 		current := query
 		for range 3 {
-			cmd, ask, err := llm.AskSmart(current)
+			var cmd, ask string
+			var err error
+
+			// 在 loading 状态下调用 LLM
+			runWithLoading(func() {
+				cmd, ask, err = llm.AskSmart(current)
+			})
+
 			if err != nil {
 				break
 			}
