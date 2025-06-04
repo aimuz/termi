@@ -1,6 +1,6 @@
 # Termi
 
-简体中文自然语言转 Bash 命令行助手
+自然语言转 Bash 命令行助手
 
 Termi 让你可以用自然语言描述想要做的事情，它会调用 OpenAI GPT-4o / GPT-3.5 将其翻译成可以直接粘贴执行的 Bash 命令，并在终端内提供交互式候选选择与一键执行。
 
@@ -81,8 +81,8 @@ $ termi 我想对 baidu.com 发起 ping
 ```mermaid
 graph TD
     A[自然语言语句] --> B(AskSmart 调用 GPT-3.5/GPT-4o)
-    B -->|返回 {command}| C[候选列表]
-    B -->|返回 {ask}| D[追问用户]
+    B -->|返回 command| C[候选列表]
+    B -->|返回 ask| D[追问用户]
     D -->|补全| B
     C --> E[Bubble Tea UI 选择]
     E --> F[Runner bash -c 执行]
