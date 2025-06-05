@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -25,31 +27,30 @@ const (
 	StateCompleted
 	StateError
 	StateCanceled
+	StateCopied
 )
 
 // AppModel is the main application model that handles the entire flow
 type AppModel struct {
-	state       AppState
-	query       string
+	state         AppState
+	query         string
 	originalQuery string
-	candidates  []suggest.Suggestion
-	cursor      int
-	spinner     spinner.Model
-	err         error
-	
+	candidates    []suggest.Suggestion
+	cursor        int
+	spinner       spinner.Model
+	err           error
+
 	// For user input state
 	inputPrompt string
 	inputValue  string
-	askingUser  bool
-	
+
 	// Context for conversation with LLM
 	contextHistory []string
-	
+
 	// Execution related
-	executing      bool
-	completed      bool
 	selectedCommand string
-	
+	copiedCommand   string
+
 	// Styles
 	titleStyle    lipgloss.Style
 	itemStyle     lipgloss.Style
@@ -85,7 +86,7 @@ func RunApp(query string) error {
 	if err != nil {
 		return fmt.Errorf("界面运行出错: %w", err)
 	}
-	
+
 	// Check if we need to execute a command after TUI exit
 	if appModel, ok := finalModel.(*AppModel); ok {
 		switch appModel.state {
@@ -96,6 +97,10 @@ func RunApp(query string) error {
 					return fmt.Errorf("命令执行失败: %w", execErr)
 				}
 			}
+		case StateCopied:
+			if appModel.copiedCommand != "" {
+				fmt.Printf("📋 已复制到剪贴板: \n%s\n", appModel.copiedCommand)
+			}
 		case StateError:
 			return fmt.Errorf("应用错误: %w", appModel.err)
 		case StateCanceled:
@@ -103,7 +108,7 @@ func RunApp(query string) error {
 			return nil
 		}
 	}
-	
+
 	return nil
 }
 
@@ -114,12 +119,34 @@ type llmAnalysisMsg struct {
 	err     error
 }
 
-type userInputMsg struct {
-	input string
+type copiedMsg struct {
+	success bool
+	err     error
 }
 
-type commandExecutedMsg struct {
-	err error
+// copyToClipboard copies text to the system clipboard
+func copyToClipboard(text string) error {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	case "linux":
+		if _, err := exec.LookPath("xclip"); err == nil {
+			cmd = exec.Command("xclip", "-selection", "clipboard")
+		} else if _, err := exec.LookPath("xsel"); err == nil {
+			cmd = exec.Command("xsel", "--clipboard", "--input")
+		} else {
+			return fmt.Errorf("no clipboard utility found (install xclip or xsel)")
+		}
+	case "windows":
+		cmd = exec.Command("clip")
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
 }
 
 // Init initializes the AppModel
@@ -129,7 +156,7 @@ func (m *AppModel) Init() tea.Cmd {
 		m.err = fmt.Errorf("LLM 未启用，请设置 OPENAI_API_KEY 环境变量")
 		return nil
 	}
-	
+
 	m.state = StateAnalyzing
 	return tea.Batch(
 		m.spinner.Tick,
@@ -148,10 +175,8 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case llmAnalysisMsg:
 		return m.handleLLMAnalysis(msg)
-	case userInputMsg:
-		return m.handleUserInput(msg)
-	case commandExecutedMsg:
-		return m.handleCommandExecuted(msg)
+	case copiedMsg:
+		return m.handleCopied(msg)
 	}
 	return m, nil
 }
@@ -160,11 +185,11 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *AppModel) View() string {
 	switch m.state {
 	case StateInit:
-		return m.titleStyle.Render("🚀 Termi") + "\n\n" + 
+		return m.titleStyle.Render("🚀 Termi") + "\n\n" +
 			m.spinner.View() + " 初始化中..."
 	case StateAnalyzing:
 		return m.titleStyle.Render("🧠 分析中") + "\n\n" +
-			m.spinner.View() + " 正在分析您的需求: " + 
+			m.spinner.View() + " 正在分析您的需求: " +
 			lipgloss.NewStyle().Italic(true).Render(m.query) + "\n\n" +
 			lipgloss.NewStyle().Faint(true).Render("请稍候...")
 	case StateAsking:
@@ -197,7 +222,7 @@ func (m *AppModel) analyzeLLMCmd() tea.Cmd {
 		if len(m.contextHistory) > 0 {
 			fullQuery = strings.Join(m.contextHistory, " ") + " " + m.query
 		}
-		
+
 		cmd, ask, err := llm.AskSmart(fullQuery)
 		return llmAnalysisMsg{
 			command: cmd,
@@ -261,6 +286,8 @@ func (m *AppModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "q":
 			m.state = StateCanceled
 			return m, tea.Quit
+		case "c":
+			return m.copyCommand()
 		}
 	default:
 		if msg.Type == tea.KeyCtrlC || msg.String() == "q" {
@@ -286,62 +313,47 @@ func (m *AppModel) handleLLMAnalysis(msg llmAnalysisMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	
+
 	if msg.ask != "" {
 		m.state = StateAsking
 		m.inputPrompt = msg.ask
 		m.inputValue = ""
 		return m, nil
 	}
-	
+
 	if msg.command != "" {
 		m.candidates = []suggest.Suggestion{{Text: msg.command, Source: "llm"}}
 		m.state = StateSelecting
 		return m, nil
 	}
-	
+
 	m.state = StateError
 	m.err = fmt.Errorf("LLM 未能生成可执行命令，请尝试提供更详细的描述")
 	return m, nil
 }
 
-func (m *AppModel) handleUserInput(msg userInputMsg) (tea.Model, tea.Cmd) {
-	m.query = m.query + " " + msg.input
-	m.state = StateAnalyzing
-	return m, tea.Batch(m.spinner.Tick, m.analyzeLLMCmd())
-}
-
-func (m *AppModel) handleCommandExecuted(msg commandExecutedMsg) (tea.Model, tea.Cmd) {
-	if msg.err != nil {
-		m.state = StateError
-		m.err = msg.err
-	} else {
-		m.state = StateCompleted
-	}
-	return m, tea.Quit
-}
 
 func (m *AppModel) executeCommand() (tea.Model, tea.Cmd) {
 	if m.cursor >= len(m.candidates) {
 		return m, nil
 	}
-	
+
 	choice := m.candidates[m.cursor]
 	m.selectedCommand = choice.Text
 	m.state = StateCompleted
-	
+
 	// Exit the TUI - command will be executed in RunApp
 	return m, tea.Quit
 }
 
 func (m *AppModel) renderAskingView() string {
 	var s strings.Builder
-	
+
 	// Show original query
 	s.WriteString(m.titleStyle.Render("🎯 原始需求: "))
 	s.WriteString(lipgloss.NewStyle().Italic(true).Render(m.originalQuery))
 	s.WriteString("\n\n")
-	
+
 	// Show conversation history if any
 	if len(m.contextHistory) > 0 {
 		s.WriteString(lipgloss.NewStyle().Faint(true).Render("对话历史:"))
@@ -352,25 +364,25 @@ func (m *AppModel) renderAskingView() string {
 		}
 		s.WriteString("\n")
 	}
-	
+
 	// Current question
 	prompt := m.titleStyle.Render("❓ ") + m.inputPrompt
 	s.WriteString(prompt)
 	s.WriteString("\n\n")
-	
+
 	// Input line
 	inputLine := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("12")).
 		Render("> " + m.inputValue + "_")
 	s.WriteString(inputLine)
 	s.WriteString("\n\n")
-	
+
 	// Help text
 	helpText := lipgloss.NewStyle().
 		Faint(true).
 		Render("Enter: 提交, Ctrl+C/Esc: 取消")
 	s.WriteString(helpText)
-	
+
 	return s.String()
 }
 
@@ -378,13 +390,13 @@ func (m *AppModel) renderSelectingView() string {
 	if len(m.candidates) == 0 {
 		return m.errorStyle.Render("❌ 没有可执行的候选命令。")
 	}
-	
+
 	var s strings.Builder
-	
+
 	// Title
 	title := m.titleStyle.Render("🚀 选择要执行的命令:")
 	s.WriteString(title + "\n\n")
-	
+
 	// Command list
 	for i, item := range m.candidates {
 		var line string
@@ -409,13 +421,41 @@ func (m *AppModel) renderSelectingView() string {
 		}
 		s.WriteString(line + "\n")
 	}
-	
+
 	// Help text
 	helpText := lipgloss.NewStyle().
 		Faint(true).
-		Render("\n↑/↓ 或 k/j: 选择, Enter: 执行, q/Esc: 退出")
+		Render("\n↑/↓ 或 k/j: 选择, Enter: 执行, c: 复制, q/Esc: 退出")
 	s.WriteString(helpText)
-	
+
 	return s.String()
 }
 
+func (m *AppModel) copyCommand() (tea.Model, tea.Cmd) {
+	if m.cursor >= len(m.candidates) {
+		return m, nil
+	}
+
+	choice := m.candidates[m.cursor]
+	m.copiedCommand = choice.Text
+
+	return m, func() tea.Msg {
+		err := copyToClipboard(choice.Text)
+		return copiedMsg{
+			success: err == nil,
+			err:     err,
+		}
+	}
+}
+
+func (m *AppModel) handleCopied(msg copiedMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.state = StateError
+		m.err = fmt.Errorf("复制失败: %v", msg.err)
+		return m, nil
+	}
+
+	// Copy successful, set state and quit
+	m.state = StateCopied
+	return m, tea.Quit
+}
