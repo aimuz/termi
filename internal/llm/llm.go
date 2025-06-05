@@ -2,64 +2,94 @@ package llm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
-	"strings"
-	"time"
 
-	openai "github.com/sashabaranov/go-openai"
+	"termi.sh/termi/internal/config"
+	"termi.sh/termi/internal/llm/providers"
 )
 
-var client *openai.Client
-
-func init() {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		return
-	}
-	client = openai.NewClient(apiKey)
+// Provider 定义 LLM 提供商接口
+type Provider interface {
+	// AskSmart 根据用户 query 返回 command 或 ask
+	// 如果需要更多信息，则 ask 字段非空
+	AskSmart(ctx context.Context, prompt string) (command string, ask string, err error)
+	
+	// Name 返回提供商名称
+	Name() string
+	
+	// Enabled 返回是否已正确配置
+	Enabled() bool
 }
 
-// Enabled 返回是否已正确配置 API KEY
-func Enabled() bool { return client != nil }
+var currentProvider Provider
 
+// Initialize 初始化 LLM 提供商
+func Initialize(cfg *config.Config) error {
+	var provider Provider
+	var err error
+	
+	switch cfg.LLM.Provider {
+	case config.ProviderOpenAI:
+		if cfg.LLM.OpenAI == nil {
+			return fmt.Errorf("OpenAI 配置未找到")
+		}
+		provider, err = providers.NewOpenAIProvider(cfg.LLM.OpenAI)
+	case config.ProviderAzureOpenAI:
+		if cfg.LLM.AzureOpenAI == nil {
+			return fmt.Errorf("Azure OpenAI 配置未找到")
+		}
+		provider, err = providers.NewAzureOpenAIProvider(cfg.LLM.AzureOpenAI)
+	case config.ProviderGemini:
+		if cfg.LLM.Gemini == nil {
+			return fmt.Errorf("Gemini 配置未找到")
+		}
+		provider, err = providers.NewGeminiProvider(cfg.LLM.Gemini)
+	case config.ProviderClaude:
+		if cfg.LLM.Claude == nil {
+			return fmt.Errorf("Claude 配置未找到")
+		}
+		provider, err = providers.NewClaudeProvider(cfg.LLM.Claude)
+	case config.ProviderLlamaCPP:
+		if cfg.LLM.LlamaCPP == nil {
+			return fmt.Errorf("Llama-cpp 配置未找到")
+		}
+		provider, err = providers.NewLlamaCPPProvider(cfg.LLM.LlamaCPP)
+	default:
+		return fmt.Errorf("不支持的 LLM 提供商: %s", cfg.LLM.Provider)
+	}
+	
+	if err != nil {
+		return fmt.Errorf("初始化 LLM 提供商失败: %w", err)
+	}
+	
+	currentProvider = provider
+	return nil
+}
+
+// Enabled 返回是否已正确配置 LLM
+func Enabled() bool {
+	return currentProvider != nil && currentProvider.Enabled()
+}
 
 // AskSmart 根据用户 query 返回 command 或 ask
 // 如果需要更多信息，则 ask 字段非空
 func AskSmart(prompt string) (command string, ask string, err error) {
-	if client == nil {
-		return "", "", fmt.Errorf("OpenAI API KEY 未配置")
+	if currentProvider == nil {
+		return "", "", fmt.Errorf("LLM 提供商未初始化")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	
+	if !currentProvider.Enabled() {
+		return "", "", fmt.Errorf("LLM 提供商 %s 未正确配置", currentProvider.Name())
+	}
+	
+	ctx := context.Background()
+	return currentProvider.AskSmart(ctx, prompt)
+}
 
-	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
-		Messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleSystem, Content: `你是 Linux 命令行专家。根据用户需求和对话历史，生成合适的 Bash 命令。
-
-如果信息充足，返回 JSON {"command":"..."}，其中 command 是可直接执行的 Bash 命令。
-如果需要更多信息，返回 JSON {"ask":"..."}，ask 用中文向用户提出具体的补充问题。
-
-注意：
-- 仔细理解用户的完整意图和上下文
-- 如果之前的对话中已经提供了相关信息，请充分利用
-- 生成的命令应该是安全、准确且可执行的`},
-			{Role: openai.ChatMessageRoleUser, Content: prompt},
-		},
-		Temperature:    0.2,
-		ResponseFormat: &openai.ChatCompletionResponseFormat{Type: openai.ChatCompletionResponseFormatTypeJSONObject},
-	})
-	if err != nil {
-		return "", "", err
+// GetProviderName 返回当前提供商名称
+func GetProviderName() string {
+	if currentProvider == nil {
+		return "未知"
 	}
-	var out struct {
-		Command string `json:"command"`
-		Ask     string `json:"ask"`
-	}
-	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &out); err != nil {
-		return "", "", err
-	}
-	return strings.TrimSpace(out.Command), strings.TrimSpace(out.Ask), nil
+	return currentProvider.Name()
 }

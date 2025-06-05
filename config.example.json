@@ -1,0 +1,36 @@
+{
+  "llm": {
+    "provider": "openai",
+    "openai": {
+      "api_key": "your-openai-api-key",
+      "model": "gpt-3.5-turbo",
+      "base_url": "",
+      "org_id": "",
+      "timeout": 30
+    },
+    "azure_openai": {
+      "api_key": "your-azure-openai-api-key",
+      "base_url": "https://your-resource.openai.azure.com",
+      "deployment_id": "your-deployment-id",
+      "api_version": "2023-12-01-preview",
+      "timeout": 30
+    },
+    "gemini": {
+      "api_key": "your-gemini-api-key",
+      "model": "gemini-pro",
+      "base_url": "",
+      "timeout": 30
+    },
+    "claude": {
+      "api_key": "your-anthropic-api-key",
+      "model": "claude-3-haiku-20240307",
+      "base_url": "",
+      "timeout": 30
+    },
+    "llama_cpp": {
+      "base_url": "http://localhost:8080",
+      "model": "",
+      "timeout": 30
+    }
+  }
+}

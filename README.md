@@ -2,7 +2,7 @@
 
 自然语言转 Bash 命令行助手
 
-Termi 让你可以用自然语言描述想要做的事情，它会调用 OpenAI GPT-4o / GPT-3.5 将其翻译成可以直接粘贴执行的 Bash 命令，并在终端内提供交互式候选选择与一键执行。
+Termi 让你可以用自然语言描述想要做的事情，它会调用多种 LLM（OpenAI GPT、Azure OpenAI、Google Gemini、Anthropic Claude、Llama.cpp 等）将其翻译成可以直接粘贴执行的 Bash 命令，并在终端内提供交互式候选选择与一键执行。
 
 ---
 
@@ -33,24 +33,66 @@ $ git clone https://github.com/aimuz/termi.git
 $ cd termi
 ```
 
-### 3. 设置 OpenAI API Key
+### 3. 配置 LLM 提供商
 
-Termi 依赖 OpenAI ChatCompletion API。请在 shell 中导出环境变量：
+Termi 支持多种 LLM 提供商，请设置其中一个环境变量：
 
+#### OpenAI
 ```bash
 $ export OPENAI_API_KEY="sk-..."
+$ export OPENAI_BASE_URL="https://api.openai.com"  # 可选，自定义API地址
 ```
 
-建议将以上命令写入 `~/.zshrc` / `~/.bashrc` 以便长期生效。
+#### Azure OpenAI
+```bash
+$ export AZURE_OPENAI_API_KEY="your-key"
+$ export AZURE_OPENAI_BASE_URL="https://your-resource.openai.azure.com"
+$ export AZURE_OPENAI_DEPLOYMENT_ID="your-deployment-id"
+$ export AZURE_OPENAI_API_VERSION="2023-12-01-preview"  # 可选
+```
+
+#### Google Gemini
+```bash
+$ export GEMINI_API_KEY="your-gemini-api-key"
+$ export GEMINI_MODEL="gemini-pro"  # 可选，默认为 gemini-pro
+```
+
+#### Anthropic Claude
+```bash
+$ export ANTHROPIC_API_KEY="your-claude-api-key"
+$ export CLAUDE_MODEL="claude-3-haiku-20240307"  # 可选
+```
+
+#### Llama.cpp（本地部署）
+```bash
+$ export LLAMA_CPP_BASE_URL="http://localhost:8080"
+```
+
+或者，你也可以创建配置文件 `~/.config/termi/config.json`：
+
+```json
+{
+  "llm": {
+    "provider": "openai",
+    "openai": {
+      "api_key": "your-api-key",
+      "model": "gpt-3.5-turbo",
+      "timeout": 30
+    }
+  }
+}
+```
+
+参考 `config.example.json` 获取完整配置示例。
 
 ### 4. 编译 / 安装
 
 ```bash
 # 在当前目录编译二进制
-$ go build -o termi ./cmd/termi
+$ go build -o termi .
 
 # 或直接安装到 GOPATH/bin，并加入 PATH
-$ go install termi.sh/termi/cmd/termi@latest
+$ go install termi.sh/termi@latest
 ```
 
 ### 5. 使用示例
@@ -100,12 +142,14 @@ graph TD
 
 ## 常见问题 FAQ
 
-1. **为什么提示 "OpenAI API KEY 未配置"？**  
-   请检查是否已设置 `OPENAI_API_KEY`，且网络能够访问 api.openai.com。
+1. **为什么提示 "未找到任何 LLM 提供商配置"？**  
+   请设置对应的环境变量或创建配置文件，参考上面的配置说明。
 2. **支持 Windows 吗？**  
    理论上可以，但尚未充分测试，欢迎 PR。
-3. **支持其他 LLM 吗？**  
-   目前仅内置 OpenAI，若要接入本地模型，可实现 `llm` 同名接口替换。
+3. **如何切换不同的 LLM 提供商？**  
+   通过设置不同的环境变量或修改配置文件中的 `provider` 字段。
+4. **可以同时配置多个提供商吗？**  
+   可以，但同时只会使用一个提供商，优先级：配置文件 > 环境变量检测（OpenAI > Azure > Gemini > Claude > Llama.cpp）。
 
 ---
 
@@ -122,9 +166,10 @@ graph TD
 ## Roadmap
 
 - [ ] 支持本地命令规则建议
-- [ ] 接入更多 LLM (Gemini, Llama-cpp, Azure OpenAI)
+- [x] 接入更多 LLM (Gemini, Llama-cpp, Azure OpenAI, Claude)
 - [ ] 增加批量模式，直接输出命令而不执行
 - [ ] 增加 `--dry-run` / `--yes` 等安全选项
+- [ ] 支持插件系统和自定义提供商
 
 ---
 
