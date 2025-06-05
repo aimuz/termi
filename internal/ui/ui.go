@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -42,7 +43,7 @@ type AppModel struct {
 
 	// For user input state
 	inputPrompt string
-	inputValue  string
+	textInput   textinput.Model
 
 	// Context for conversation with LLM
 	contextHistory []string
@@ -65,11 +66,15 @@ func NewAppModel(query string) *AppModel {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("69"))
 
+	// Initialize text input
+	ti := textinput.New()
+
 	return &AppModel{
 		state:         StateInit,
 		query:         query,
 		originalQuery: query,
 		spinner:       s,
+		textInput:     ti,
 		titleStyle:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")),
 		itemStyle:     lipgloss.NewStyle(),
 		selectedStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true),
@@ -166,19 +171,26 @@ func (m *AppModel) Init() tea.Cmd {
 
 // Update handles messages and state transitions
 func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	// Update textinput when in asking state
+	if m.state == StateAsking {
+		m.textInput, cmd = m.textInput.Update(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
 	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
+		var spinnerCmd tea.Cmd
+		m.spinner, spinnerCmd = m.spinner.Update(msg)
+		return m, tea.Batch(cmd, spinnerCmd)
 	case llmAnalysisMsg:
 		return m.handleLLMAnalysis(msg)
 	case copiedMsg:
 		return m.handleCopied(msg)
 	}
-	return m, nil
+	return m, cmd
 }
 
 // View renders the current state
@@ -237,25 +249,18 @@ func (m *AppModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case StateAsking:
 		switch msg.Type {
 		case tea.KeyEnter:
-			input := strings.TrimSpace(m.inputValue)
+			input := strings.TrimSpace(m.textInput.Value())
 			if input == "" {
 				return m, nil
 			}
 			// Add question and answer to context history
 			m.contextHistory = append(m.contextHistory, m.inputPrompt+" "+input)
-			m.inputValue = ""
+			m.textInput.SetValue("")
 			m.state = StateAnalyzing
 			return m, tea.Batch(m.spinner.Tick, m.analyzeLLMCmd())
 		case tea.KeyCtrlC, tea.KeyEsc:
 			m.state = StateCanceled
 			return m, tea.Quit
-		case tea.KeyBackspace:
-			if len(m.inputValue) > 0 {
-				m.inputValue = m.inputValue[:len(m.inputValue)-1]
-			}
-		case tea.KeyRunes:
-			// Handle character input
-			m.inputValue += string(msg.Runes)
 		}
 	case StateSelecting:
 		switch msg.Type {
@@ -317,7 +322,8 @@ func (m *AppModel) handleLLMAnalysis(msg llmAnalysisMsg) (tea.Model, tea.Cmd) {
 	if msg.ask != "" {
 		m.state = StateAsking
 		m.inputPrompt = msg.ask
-		m.inputValue = ""
+		m.textInput.SetValue("")
+		m.textInput.Focus()
 		return m, nil
 	}
 
@@ -369,11 +375,8 @@ func (m *AppModel) renderAskingView() string {
 	s.WriteString(prompt)
 	s.WriteString("\n\n")
 
-	// Input line
-	inputLine := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("12")).
-		Render("> " + m.inputValue + "_")
-	s.WriteString(inputLine)
+	// Input line using textinput component
+	s.WriteString(m.textInput.View())
 	s.WriteString("\n\n")
 
 	// Help text
