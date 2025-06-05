@@ -99,7 +99,7 @@ func RunApp(query string) error {
 			}
 		case StateCopied:
 			if appModel.copiedCommand != "" {
-				fmt.Printf("📋 已复制到剪贴板: \n%s\n", appModel.copiedCommand)
+				fmt.Printf("📋 已复制到剪贴板: \n  %s\n", appModel.copiedCommand)
 			}
 		case StateError:
 			return fmt.Errorf("应用错误: %w", appModel.err)
@@ -331,7 +331,6 @@ func (m *AppModel) handleLLMAnalysis(msg llmAnalysisMsg) (tea.Model, tea.Cmd) {
 	m.err = fmt.Errorf("LLM 未能生成可执行命令，请尝试提供更详细的描述")
 	return m, nil
 }
-
 
 func (m *AppModel) executeCommand() (tea.Model, tea.Cmd) {
 	if m.cursor >= len(m.candidates) {
