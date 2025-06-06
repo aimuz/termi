@@ -25,45 +25,35 @@ var currentProvider Provider
 
 // Initialize 初始化 LLM 提供商
 func Initialize(cfg *config.Config) error {
-	var provider Provider
-	var err error
-
-	switch cfg.LLM.Provider {
-	case config.ProviderOpenAI:
-		if cfg.LLM.OpenAI == nil {
-			return fmt.Errorf("OpenAI 配置未找到")
-		}
-		provider, err = providers.NewOpenAIProvider(cfg.LLM.OpenAI)
-	case config.ProviderAzureOpenAI:
-		if cfg.LLM.AzureOpenAI == nil {
-			return fmt.Errorf("Azure OpenAI 配置未找到")
-		}
-		provider, err = providers.NewAzureOpenAIProvider(cfg.LLM.AzureOpenAI)
-	case config.ProviderGemini:
-		if cfg.LLM.Gemini == nil {
-			return fmt.Errorf("Gemini 配置未找到")
-		}
-		provider, err = providers.NewGeminiProvider(cfg.LLM.Gemini)
-	case config.ProviderClaude:
-		if cfg.LLM.Claude == nil {
-			return fmt.Errorf("Claude 配置未找到")
-		}
-		provider, err = providers.NewClaudeProvider(cfg.LLM.Claude)
-	case config.ProviderLlamaCPP:
-		if cfg.LLM.LlamaCPP == nil {
-			return fmt.Errorf("Llama-cpp 配置未找到")
-		}
-		provider, err = providers.NewLlamaCPPProvider(cfg.LLM.LlamaCPP)
-	default:
-		return fmt.Errorf("不支持的 LLM 提供商: %s", cfg.LLM.Provider)
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("配置验证失败: %w", err)
 	}
 
+	provider, err := createProvider(cfg)
 	if err != nil {
-		return fmt.Errorf("初始化 LLM 提供商失败: %w", err)
+		return fmt.Errorf("创建 LLM 提供商失败: %w", err)
 	}
 
 	currentProvider = provider
 	return nil
+}
+
+// createProvider 根据配置创建相应的 LLM 提供商
+func createProvider(cfg *config.Config) (Provider, error) {
+	switch cfg.LLM.Provider {
+	case config.ProviderOpenAI:
+		return providers.NewOpenAIProvider(cfg.LLM.OpenAI)
+	case config.ProviderAzureOpenAI:
+		return providers.NewAzureOpenAIProvider(cfg.LLM.AzureOpenAI)
+	case config.ProviderGemini:
+		return providers.NewGeminiProvider(cfg.LLM.Gemini)
+	case config.ProviderClaude:
+		return providers.NewClaudeProvider(cfg.LLM.Claude)
+	case config.ProviderLlamaCPP:
+		return providers.NewLlamaCPPProvider(cfg.LLM.LlamaCPP)
+	default:
+		return nil, fmt.Errorf("不支持的 LLM 提供商: %s", cfg.LLM.Provider)
+	}
 }
 
 // Enabled 返回是否已正确配置 LLM

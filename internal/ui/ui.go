@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -306,36 +307,66 @@ func (m *AppModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *AppModel) handleLLMAnalysis(msg llmAnalysisMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		m.state = StateError
-		// Provide more user-friendly error messages
-		if strings.Contains(msg.err.Error(), "API KEY") {
-			m.err = fmt.Errorf("请设置 OPENAI_API_KEY 环境变量")
-		} else if strings.Contains(msg.err.Error(), "timeout") {
-			m.err = fmt.Errorf("网络请求超时，请检查网络连接")
-		} else if strings.Contains(msg.err.Error(), "quota") {
-			m.err = fmt.Errorf("API 配额已用完，请检查 OpenAI 账户")
-		} else {
-			m.err = fmt.Errorf("LLM 服务出错: %v", msg.err)
-		}
+		m.err = m.formatLLMError(msg.err)
 		return m, nil
 	}
 
 	if msg.ask != "" {
-		m.state = StateAsking
-		m.inputPrompt = msg.ask
-		m.textInput.SetValue("")
-		m.textInput.Focus()
-		return m, nil
+		return m.transitionToAsking(msg.ask), nil
 	}
 
 	if msg.command != "" {
-		m.candidates = []suggest.Suggestion{{Text: msg.command, Source: "llm"}}
-		m.state = StateSelecting
-		return m, nil
+		return m.transitionToSelecting(msg.command), nil
 	}
 
 	m.state = StateError
 	m.err = fmt.Errorf("LLM 未能生成可执行命令，请尝试提供更详细的描述")
 	return m, nil
+}
+
+func (m *AppModel) formatLLMError(err error) error {
+	var llmErr *llm.LLMError
+	if errors.As(err, &llmErr) {
+		switch llmErr.Type {
+		case llm.ErrorTypeAuth:
+			return fmt.Errorf("请设置对应的 API KEY 环境变量")
+		case llm.ErrorTypeTimeout:
+			return fmt.Errorf("网络请求超时，请检查网络连接")
+		case llm.ErrorTypeQuota:
+			return fmt.Errorf("API 配额已用完，请检查账户")
+		case llm.ErrorTypeNetwork:
+			return fmt.Errorf("网络连接失败，请检查连接")
+		default:
+			return fmt.Errorf("LLM 服务出错: %v", llmErr.Message)
+		}
+	}
+
+	// 向后兼容，处理非 LLMError 类型
+	errStr := err.Error()
+	switch {
+	case strings.Contains(errStr, "API KEY"):
+		return fmt.Errorf("请设置对应的 API KEY 环境变量")
+	case strings.Contains(errStr, "timeout"):
+		return fmt.Errorf("网络请求超时，请检查网络连接")
+	case strings.Contains(errStr, "quota"):
+		return fmt.Errorf("API 配额已用完，请检查账户")
+	default:
+		return fmt.Errorf("LLM 服务出错: %v", err)
+	}
+}
+
+func (m *AppModel) transitionToAsking(ask string) *AppModel {
+	m.state = StateAsking
+	m.inputPrompt = ask
+	m.textInput.SetValue("")
+	m.textInput.Focus()
+	return m
+}
+
+func (m *AppModel) transitionToSelecting(command string) *AppModel {
+	m.candidates = []suggest.Suggestion{{Text: command, Source: "llm"}}
+	m.state = StateSelecting
+	return m
 }
 
 func (m *AppModel) executeCommand() (tea.Model, tea.Cmd) {
