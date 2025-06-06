@@ -13,10 +13,10 @@ type Provider interface {
 	// AskSmart 根据用户 query 返回 command 或 ask
 	// 如果需要更多信息，则 ask 字段非空
 	AskSmart(ctx context.Context, prompt string) (command string, ask string, err error)
-	
+
 	// Name 返回提供商名称
 	Name() string
-	
+
 	// Enabled 返回是否已正确配置
 	Enabled() bool
 }
@@ -27,7 +27,7 @@ var currentProvider Provider
 func Initialize(cfg *config.Config) error {
 	var provider Provider
 	var err error
-	
+
 	switch cfg.LLM.Provider {
 	case config.ProviderOpenAI:
 		if cfg.LLM.OpenAI == nil {
@@ -57,11 +57,11 @@ func Initialize(cfg *config.Config) error {
 	default:
 		return fmt.Errorf("不支持的 LLM 提供商: %s", cfg.LLM.Provider)
 	}
-	
+
 	if err != nil {
 		return fmt.Errorf("初始化 LLM 提供商失败: %w", err)
 	}
-	
+
 	currentProvider = provider
 	return nil
 }
@@ -77,11 +77,11 @@ func AskSmart(prompt string) (command string, ask string, err error) {
 	if currentProvider == nil {
 		return "", "", fmt.Errorf("LLM 提供商未初始化")
 	}
-	
+
 	if !currentProvider.Enabled() {
 		return "", "", fmt.Errorf("LLM 提供商 %s 未正确配置", currentProvider.Name())
 	}
-	
+
 	ctx := context.Background()
 	return currentProvider.AskSmart(ctx, prompt)
 }

@@ -21,30 +21,30 @@ const (
 // LLMConfig LLM 配置结构
 type LLMConfig struct {
 	Provider LLMProvider `json:"provider"`
-	
+
 	// OpenAI 配置
 	OpenAI *OpenAIConfig `json:"openai,omitempty"`
-	
+
 	// Azure OpenAI 配置
 	AzureOpenAI *AzureOpenAIConfig `json:"azure_openai,omitempty"`
-	
+
 	// Gemini 配置
 	Gemini *GeminiConfig `json:"gemini,omitempty"`
-	
+
 	// Claude 配置
 	Claude *ClaudeConfig `json:"claude,omitempty"`
-	
+
 	// Llama-cpp 配置
 	LlamaCPP *LlamaCPPConfig `json:"llama_cpp,omitempty"`
 }
 
 // OpenAIConfig OpenAI 配置
 type OpenAIConfig struct {
-	APIKey    string `json:"api_key"`
-	Model     string `json:"model"`
-	BaseURL   string `json:"base_url,omitempty"`
-	OrgID     string `json:"org_id,omitempty"`
-	Timeout   int    `json:"timeout,omitempty"` // 秒
+	APIKey  string `json:"api_key"`
+	Model   string `json:"model"`
+	BaseURL string `json:"base_url,omitempty"`
+	OrgID   string `json:"org_id,omitempty"`
+	Timeout int    `json:"timeout,omitempty"` // 秒
 }
 
 // AzureOpenAIConfig Azure OpenAI 配置
@@ -104,7 +104,7 @@ func LoadConfig() (*Config, error) {
 	if _, err := os.Stat(configPath); err == nil {
 		return loadFromFile(configPath)
 	}
-	
+
 	// 如果配置文件不存在，从环境变量加载
 	return loadFromEnv()
 }
@@ -112,21 +112,21 @@ func LoadConfig() (*Config, error) {
 // SaveConfig 保存配置到文件
 func (c *Config) SaveConfig() error {
 	configPath := getConfigPath()
-	
+
 	// 确保配置目录存在
 	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
 		return fmt.Errorf("创建配置目录失败: %w", err)
 	}
-	
+
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return fmt.Errorf("序列化配置失败: %w", err)
 	}
-	
+
 	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return fmt.Errorf("写入配置文件失败: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -145,19 +145,19 @@ func loadFromFile(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("读取配置文件失败: %w", err)
 	}
-	
+
 	var config Config
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
 	}
-	
+
 	return &config, nil
 }
 
 // loadFromEnv 从环境变量加载配置
 func loadFromEnv() (*Config, error) {
 	config := DefaultConfig()
-	
+
 	// 检查 OpenAI 配置
 	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
 		config.LLM.Provider = ProviderOpenAI
@@ -170,7 +170,7 @@ func loadFromEnv() (*Config, error) {
 		}
 		return config, nil
 	}
-	
+
 	// 检查 Azure OpenAI 配置
 	if apiKey := os.Getenv("AZURE_OPENAI_API_KEY"); apiKey != "" {
 		config.LLM.Provider = ProviderAzureOpenAI
@@ -183,7 +183,7 @@ func loadFromEnv() (*Config, error) {
 		}
 		return config, nil
 	}
-	
+
 	// 检查 Gemini 配置
 	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
 		config.LLM.Provider = ProviderGemini
@@ -195,7 +195,7 @@ func loadFromEnv() (*Config, error) {
 		}
 		return config, nil
 	}
-	
+
 	// 检查 Claude 配置
 	if apiKey := os.Getenv("ANTHROPIC_API_KEY"); apiKey != "" {
 		config.LLM.Provider = ProviderClaude
@@ -207,7 +207,7 @@ func loadFromEnv() (*Config, error) {
 		}
 		return config, nil
 	}
-	
+
 	// 检查 Llama-cpp 配置
 	if baseURL := os.Getenv("LLAMA_CPP_BASE_URL"); baseURL != "" {
 		config.LLM.Provider = ProviderLlamaCPP
@@ -218,7 +218,7 @@ func loadFromEnv() (*Config, error) {
 		}
 		return config, nil
 	}
-	
+
 	return nil, fmt.Errorf("未找到任何 LLM 提供商配置")
 }
 

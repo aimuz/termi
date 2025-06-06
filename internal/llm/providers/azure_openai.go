@@ -28,15 +28,15 @@ func NewAzureOpenAIProvider(cfg *config.AzureOpenAIConfig) (*AzureOpenAIProvider
 	if cfg.DeploymentID == "" {
 		return nil, fmt.Errorf("Azure OpenAI Deployment ID 未配置")
 	}
-	
+
 	clientConfig := openai.DefaultAzureConfig(cfg.APIKey, cfg.BaseURL)
 	clientConfig.APIVersion = cfg.APIVersion
 	if clientConfig.APIVersion == "" {
 		clientConfig.APIVersion = "2023-12-01-preview"
 	}
-	
+
 	client := openai.NewClientWithConfig(clientConfig)
-	
+
 	return &AzureOpenAIProvider{
 		client: client,
 		config: cfg,
@@ -59,10 +59,10 @@ func (p *AzureOpenAIProvider) AskSmart(ctx context.Context, prompt string) (comm
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
-	
+
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	
+
 	resp, err := p.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: p.config.DeploymentID, // Azure 使用 deployment ID 作为模型名
 		Messages: []openai.ChatCompletionMessage{
@@ -86,11 +86,11 @@ func (p *AzureOpenAIProvider) AskSmart(ctx context.Context, prompt string) (comm
 	if err != nil {
 		return "", "", fmt.Errorf("Azure OpenAI API 调用失败: %w", err)
 	}
-	
+
 	if len(resp.Choices) == 0 {
 		return "", "", fmt.Errorf("Azure OpenAI API 返回空结果")
 	}
-	
+
 	var out struct {
 		Command string `json:"command"`
 		Ask     string `json:"ask"`
@@ -98,6 +98,6 @@ func (p *AzureOpenAIProvider) AskSmart(ctx context.Context, prompt string) (comm
 	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &out); err != nil {
 		return "", "", fmt.Errorf("解析 Azure OpenAI 响应失败: %w", err)
 	}
-	
+
 	return strings.TrimSpace(out.Command), strings.TrimSpace(out.Ask), nil
 }

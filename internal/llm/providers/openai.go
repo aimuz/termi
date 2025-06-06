@@ -22,21 +22,21 @@ func NewOpenAIProvider(cfg *config.OpenAIConfig) (*OpenAIProvider, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("OpenAI API Key 未配置")
 	}
-	
+
 	clientConfig := openai.DefaultConfig(cfg.APIKey)
-	
+
 	// 设置自定义 BaseURL（如果提供）
 	if cfg.BaseURL != "" {
 		clientConfig.BaseURL = cfg.BaseURL
 	}
-	
+
 	// 设置组织 ID（如果提供）
 	if cfg.OrgID != "" {
 		clientConfig.OrgID = cfg.OrgID
 	}
-	
+
 	client := openai.NewClientWithConfig(clientConfig)
-	
+
 	return &OpenAIProvider{
 		client: client,
 		config: cfg,
@@ -59,15 +59,15 @@ func (p *OpenAIProvider) AskSmart(ctx context.Context, prompt string) (command s
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
-	
+
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	
+
 	model := p.config.Model
 	if model == "" {
-		model = openai.GPT3Dot5Turbo
+		model = openai.GPT4Dot1Mini
 	}
-	
+
 	resp, err := p.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: model,
 		Messages: []openai.ChatCompletionMessage{
@@ -91,11 +91,11 @@ func (p *OpenAIProvider) AskSmart(ctx context.Context, prompt string) (command s
 	if err != nil {
 		return "", "", fmt.Errorf("OpenAI API 调用失败: %w", err)
 	}
-	
+
 	if len(resp.Choices) == 0 {
 		return "", "", fmt.Errorf("OpenAI API 返回空结果")
 	}
-	
+
 	var out struct {
 		Command string `json:"command"`
 		Ask     string `json:"ask"`
@@ -103,6 +103,6 @@ func (p *OpenAIProvider) AskSmart(ctx context.Context, prompt string) (command s
 	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &out); err != nil {
 		return "", "", fmt.Errorf("解析 OpenAI 响应失败: %w", err)
 	}
-	
+
 	return strings.TrimSpace(out.Command), strings.TrimSpace(out.Ask), nil
 }
